@@ -3,6 +3,7 @@ from decimal import Decimal
 from datetime import datetime
 from app.calculation import Calculation
 from app.exceptions import OperationError
+from app.calculator_memento import CalculatorMemento
 import logging
 
 
@@ -130,3 +131,78 @@ def test_from_dict_result_mismatch(caplog):
 
     # Assert
     assert "Loaded calculation result 10 differs from computed result 5" in caplog.text
+
+def test_calculation_str():
+    calc = Calculation("Addition", Decimal("2"), Decimal("3"))
+    assert str(calc) == "Addition(2, 3) = 5"
+
+def test_calculation_repr():
+    calc = Calculation("Addition", Decimal("2"), Decimal("3"))
+    result = repr(calc)
+    assert result.startswith("Calculation(operation='Addition'")
+    assert "operand1=2" in result
+    assert "operand2=3" in result
+    assert "result=5" in result
+    assert f"timestamp='{calc.timestamp.isoformat()}'" in result
+
+def test_calculation_eq_with_non_calculation():
+    calc = Calculation("Addition", Decimal("2"), Decimal("3"))
+
+    # Calling __eq__ directly shows the NotImplemented return value
+    assert calc.__eq__("not a calculation") is NotImplemented
+
+    # Using == makes Python fall back to identity comparison, so it ends up False
+    assert calc != "not a calculation"
+    assert calc != 5
+
+def test_calculation_eq_with_calculation():
+    calc1 = Calculation("Addition", Decimal("2"), Decimal("3"))
+    calc2 = Calculation("Addition", Decimal("2"), Decimal("3"))
+    calc3 = Calculation("Subtraction", Decimal("5"), Decimal("3"))
+
+    assert calc1 == calc2
+    assert calc1 != calc3
+
+def test_memento_to_dict():
+    calc = Calculation("Addition", Decimal("2"), Decimal("3"))
+    memento = CalculatorMemento(history=[calc])
+
+    data = memento.to_dict()
+
+    assert data['history'] == [calc.to_dict()]
+    assert data['timestamp'] == memento.timestamp.isoformat()
+
+
+def test_memento_from_dict():
+    calc = Calculation("Addition", Decimal("2"), Decimal("3"))
+    timestamp = datetime(2024, 1, 1, 12, 0, 0)
+    data = {
+        'history': [calc.to_dict()],
+        'timestamp': timestamp.isoformat()
+    }
+
+    memento = CalculatorMemento.from_dict(data)
+
+    assert len(memento.history) == 1
+    assert memento.history[0] == calc
+    assert memento.timestamp == timestamp
+
+
+def test_memento_round_trip():
+    calc1 = Calculation("Addition", Decimal("2"), Decimal("3"))
+    calc2 = Calculation("Multiplication", Decimal("4"), Decimal("5"))
+    original = CalculatorMemento(history=[calc1, calc2])
+
+    restored = CalculatorMemento.from_dict(original.to_dict())
+
+    assert restored.history == original.history
+    assert restored.timestamp == original.timestamp
+
+def test_power_overflow_raises_operation_error():
+    with pytest.raises(OperationError, match="Calculation failed"):
+        Calculation("Power", Decimal("10"), Decimal("1000"))
+
+
+def test_multiplication_overflow_raises_operation_error():
+    with pytest.raises(OperationError, match="Calculation failed"):
+        Calculation("Multiplication", Decimal("1E999999999"), Decimal("1E999999999"))
