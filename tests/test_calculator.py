@@ -1,8 +1,9 @@
 import datetime
+from types import SimpleNamespace
 from pathlib import Path
 import pandas as pd
 import pytest
-from unittest.mock import Mock, patch, PropertyMock
+from unittest.mock import Mock, patch, PropertyMock, MagicMock
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 from app.calculator import Calculator
@@ -178,3 +179,113 @@ def test_calculator_repl_help(mock_print, mock_input):
 def test_calculator_repl_addition(mock_print, mock_input):
     calculator_repl()
     mock_print.assert_any_call("\nResult: 5")
+
+def test_history_trimmed_when_exceeding_max_size(tmp_path):
+    config = CalculatorConfig(base_dir=tmp_path)
+    calc = Calculator(config)
+
+    calc.history.clear()          # drop anything loaded from a real file
+    calc.config.max_history_size = 2
+
+    calc.set_operation(OperationFactory.create_operation("add"))
+    calc.perform_operation("1", "1")
+    calc.perform_operation("2", "2")
+    calc.perform_operation("3", "3")
+
+    assert len(calc.history) == 2
+    assert calc.history[0].operand1 == Decimal("2")
+    assert calc.history[1].operand1 == Decimal("3")
+
+def test_perform_operation_wraps_unexpected_errors(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+    history_before = len(calc.history)
+
+    failing_operation = MagicMock()
+    failing_operation.execute.side_effect = RuntimeError("kaboom")
+    calc.set_operation(failing_operation)
+
+    with pytest.raises(OperationError, match="Operation failed: kaboom"):
+        calc.perform_operation("1", "2")
+
+    # The failure happens before the calculation is recorded
+    assert len(calc.history) == history_before
+
+def test_perform_operation_reraises_validation_error(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+    calc.set_operation(MagicMock())
+
+    with pytest.raises(ValidationError):
+        calc.perform_operation("not-a-number", "2")
+
+def test_save_history_empty_writes_headers_only(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+    calc.history.clear()  # force the "else" branch
+
+    with patch("app.calculator.pd.DataFrame.to_csv", autospec=True) as mock_to_csv:
+        calc.save_history()
+
+    mock_to_csv.assert_called_once()
+    df_written = mock_to_csv.call_args[0][0]  # autospec passes the DataFrame as self
+    assert df_written.empty
+    assert list(df_written.columns) == [
+        "operation", "operand1", "operand2", "result", "timestamp"
+    ]
+
+
+def test_save_history_failure_raises_operation_error(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+
+    with patch("app.calculator.pd.DataFrame.to_csv", side_effect=OSError("disk full")):
+        with pytest.raises(OperationError, match="Failed to save history: disk full"):
+            calc.save_history()
+
+def test_load_history_empty_file_logs_and_keeps_history(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+    history_before = list(calc.history)
+
+    empty_df = pd.DataFrame(
+        columns=["operation", "operand1", "operand2", "result", "timestamp"]
+    )
+
+    with patch.object(Path, "exists", return_value=True), \
+         patch("app.calculator.pd.read_csv", return_value=empty_df), \
+         patch("app.calculator.logging.info") as mock_info:
+        calc.load_history()
+
+    mock_info.assert_called_once_with("Loaded empty history file")
+    # An empty file doesn't reset the in-memory history
+    assert calc.history == history_before
+
+def test_get_history_dataframe_returns_expected_columns_and_values(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+
+    ts = datetime.datetime(2024, 1, 1, 12, 0, 0)
+    calc.history = [
+        SimpleNamespace(operation="Addition", operand1=1, operand2=2, result=3, timestamp=ts),
+        SimpleNamespace(operation="Subtraction", operand1=5, operand2=4, result=1, timestamp=ts),
+    ]
+
+    df = calc.get_history_dataframe()
+
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == ["operation", "operand1", "operand2", "result", "timestamp"]
+    assert len(df) == 2
+    assert df.iloc[0]["operation"] == "Addition"
+    assert df.iloc[0]["operand1"] == "1"      # values are converted with str()
+    assert df.iloc[0]["result"] == "3"
+    assert df.iloc[1]["operand2"] == "4"
+    assert df.iloc[0]["timestamp"] == ts      # timestamp is kept as a datetime, not a string
+
+def test_show_history_returns_formatted_strings(tmp_path):
+    calc = Calculator(CalculatorConfig(base_dir=tmp_path))
+
+    calc.history = [
+        SimpleNamespace(operation="Addition", operand1=1, operand2=2, result=3),
+        SimpleNamespace(operation="Subtraction", operand1=5, operand2=4, result=1),
+    ]
+
+    assert calc.show_history() == [
+        "Addition(1, 2) = 3",
+        "Subtraction(5, 4) = 1",
+    ]
+
