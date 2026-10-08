@@ -289,3 +289,31 @@ def test_show_history_returns_formatted_strings(tmp_path):
         "Subtraction(5, 4) = 1",
     ]
 
+def test_exit_save_history_failure(capsys):
+    with patch('builtins.input', side_effect=['exit']), \
+         patch('app.calculator.Calculator.save_history',
+               side_effect=Exception("disk full")):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Warning: Could not save history: disk full" in output
+    assert "Goodbye!" in output
+
+def test_history_empty(capsys):
+    with patch('builtins.input', side_effect=['history', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.show_history', return_value=[]):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "No calculations in history" in output
+
+
+def test_history_with_entries(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'history', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Calculation History:" in output
+    assert "1. " in output
