@@ -29,5 +29,6 @@ jobs:
 
       - name: Run tests with pytest and enforce 70% coverage
         run: |
+          python -X faulthandler -m pytest -v -x
           pytest --cov=app --cov-fail-under=70
           pytest --cov=app --cov-report=term-missing
