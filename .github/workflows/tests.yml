@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'  # Set your desired Python version
+          python-version: '3.12'  # Pin to stable version compatible with pinned deps
 
       - name: Install dependencies from requirements.txt
         run: |
