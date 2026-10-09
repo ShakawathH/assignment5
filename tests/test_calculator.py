@@ -317,3 +317,248 @@ def test_history_with_entries(capsys):
     output = capsys.readouterr().out
     assert "Calculation History:" in output
     assert "1. " in output
+
+def test_clear_history(capsys):
+    with patch('builtins.input', side_effect=['clear', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "History cleared" in output
+
+def test_clear_history_removes_entries(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'clear', 'history', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "History cleared" in output
+    assert "No calculations in history" in output
+
+def test_undo_nothing_to_undo(capsys):
+    with patch('builtins.input', side_effect=['undo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.undo', return_value=False):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Nothing to undo" in output
+
+
+def test_undo_success(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'undo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Operation undone" in output
+
+def test_redo_nothing_to_redo(capsys):
+    with patch('builtins.input', side_effect=['redo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.redo', return_value=False):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Nothing to redo" in output
+
+
+def test_redo_success(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'undo', 'redo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Operation redone" in output
+
+def test_save_success(capsys):
+    with patch('builtins.input', side_effect=['save', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "History saved successfully" in output
+
+
+def test_save_error(capsys):
+    with patch('builtins.input', side_effect=['save', 'exit']), \
+         patch('app.calculator.Calculator.save_history',
+               side_effect=Exception("disk full")):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Error saving history: disk full" in output
+
+def test_cancel_first_number(capsys):
+    with patch('builtins.input', side_effect=['add', 'cancel', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Operation cancelled" in output
+
+def test_cancel_second_number(capsys):
+    with patch('builtins.input', side_effect=['add', '2', 'cancel', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Operation cancelled" in output
+
+def test_validation_error(capsys):
+    with patch('builtins.input', side_effect=['add', 'abc', '2', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.perform_operation',
+               side_effect=ValidationError("bad input")):
+        calculator_repl()
+
+    assert "Error: bad input" in capsys.readouterr().out
+
+
+def test_operation_error(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.perform_operation',
+               side_effect=OperationError("op failed")):
+        calculator_repl()
+
+    assert "Error: op failed" in capsys.readouterr().out
+
+
+def test_unexpected_error_in_operation(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.perform_operation',
+               side_effect=RuntimeError("boom")):
+        calculator_repl()
+
+    assert "Unexpected error: boom" in capsys.readouterr().out
+
+def test_unknown_command(capsys):
+    with patch('builtins.input', side_effect=['foo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    assert "Unknown command: 'foo'" in capsys.readouterr().out
+
+
+def test_keyboard_interrupt(capsys):
+    with patch('builtins.input', side_effect=[KeyboardInterrupt, 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+
+    assert "Operation cancelled" in capsys.readouterr().out
+
+
+def test_eof_error(capsys):
+    with patch('builtins.input', side_effect=EOFError):
+        calculator_repl()
+
+    assert "Input terminated. Exiting..." in capsys.readouterr().out
+
+
+def test_loop_level_exception(capsys):
+    with patch('builtins.input', side_effect=['history', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.show_history',
+               side_effect=Exception("history broke")):
+        calculator_repl()
+
+    assert "Error: history broke" in capsys.readouterr().out
+
+
+def test_fatal_error_on_init(capsys):
+    with patch('app.calculator_repl.Calculator',
+               side_effect=Exception("init failed")):
+        with pytest.raises(Exception, match="init failed"):
+            calculator_repl()
+
+    assert "Fatal error: init failed" in capsys.readouterr().out
+
+######
+
+def test_load_success(capsys):
+    with patch('builtins.input', side_effect=['load', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.load_history'):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "History loaded successfully" in output
+
+
+def test_load_error(capsys):
+    with patch('builtins.input', side_effect=['load', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.load_history',
+               side_effect=Exception("file not found")):
+        calculator_repl()
+
+    output = capsys.readouterr().out
+    assert "Error loading history: file not found" in output
+
+def test_cancel_first_number(capsys):
+    with patch('builtins.input', side_effect=['add', 'cancel', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+    assert "Operation cancelled" in capsys.readouterr().out
+
+
+def test_cancel_second_number(capsys):
+    with patch('builtins.input', side_effect=['add', '2', 'cancel', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+    assert "Operation cancelled" in capsys.readouterr().out
+
+
+def test_validation_error(capsys):
+    with patch('builtins.input', side_effect=['add', 'abc', '2', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.perform_operation',
+               side_effect=ValidationError("bad input")):
+        calculator_repl()
+    assert "Error: bad input" in capsys.readouterr().out
+
+
+def test_unexpected_error_in_operation(capsys):
+    with patch('builtins.input', side_effect=['add', '2', '3', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.perform_operation',
+               side_effect=RuntimeError("boom")):
+        calculator_repl()
+    assert "Unexpected error: boom" in capsys.readouterr().out
+
+
+def test_unknown_command(capsys):
+    with patch('builtins.input', side_effect=['foo', 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+    assert "Unknown command: 'foo'" in capsys.readouterr().out
+
+
+def test_keyboard_interrupt(capsys):
+    with patch('builtins.input', side_effect=[KeyboardInterrupt, 'exit']), \
+         patch('app.calculator.Calculator.save_history'):
+        calculator_repl()
+    assert "Operation cancelled" in capsys.readouterr().out
+
+
+def test_eof_error(capsys):
+    with patch('builtins.input', side_effect=EOFError):
+        calculator_repl()
+    assert "Input terminated. Exiting..." in capsys.readouterr().out
+
+
+def test_fatal_error_on_init():
+    import pytest
+    with patch('app.calculator_repl.Calculator', side_effect=Exception("init failed")):
+        with pytest.raises(Exception, match="init failed"):
+            calculator_repl()
+
+def test_loop_level_exception(capsys):
+    with patch('builtins.input', side_effect=['history', 'exit']), \
+         patch('app.calculator.Calculator.save_history'), \
+         patch('app.calculator.Calculator.show_history',
+               side_effect=Exception("history broke")):
+        calculator_repl()
+    assert "Error: history broke" in capsys.readouterr().out
